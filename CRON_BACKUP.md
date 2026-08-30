@@ -13,3 +13,43 @@ agendamento normal do GitHub ja tiver concluido aquela publicacao, a
 execucao de backup termina sem publicar outro Reel. A concorrencia do
 workflow serializa uma execucao atrasada e o backup para que ambos leiam
 o estado mais recente.
+
+## Requisicao dos dois jobs
+
+URL:
+
+```text
+https://api.github.com/repos/LuisFelipe1-star/PUBLICATION_MANAGER_AUTOMATICO/actions/workflows/instagram-publisher.yml/dispatches
+```
+
+Metodo: `POST`
+
+Headers:
+
+```text
+Accept: application/vnd.github+json
+Authorization: Bearer SEU_TOKEN_FINE_GRAINED
+Content-Type: application/json
+X-GitHub-Api-Version: 2022-11-28
+```
+
+O token deve ter acesso somente a este repositorio e permissao
+`Actions: Read and write`. Nunca registre o token neste arquivo.
+
+Corpo do job das 13:15:
+
+```json
+{"ref":"master","inputs":{"dry_run":"false","slot":"1245"}}
+```
+
+Corpo do job das 20:00:
+
+```json
+{"ref":"master","inputs":{"dry_run":"false","slot":"1930"}}
+```
+
+Para um teste sem publicar, use temporariamente:
+
+```json
+{"ref":"master","inputs":{"dry_run":"true","slot":"manual"}}
+```
