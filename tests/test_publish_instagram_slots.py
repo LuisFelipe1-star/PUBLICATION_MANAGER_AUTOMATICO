@@ -1,7 +1,11 @@
 import importlib.util
+import json
+import os
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +35,54 @@ class PublicationSlotTests(unittest.TestCase):
         PUBLISHER.mark_slot_completed(state, "new-slot")
         self.assertEqual(len(state["completed_slots"]), 120)
         self.assertEqual(state["completed_slots"][-1], "new-slot")
+
+    def test_dry_run_validates_credentials_without_publishing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest = root / "manifest.json"
+            published = root / "published.json"
+            manifest.write_text(
+                json.dumps([{"id": "video-1", "video_path": "video.mp4"}]),
+                encoding="utf-8",
+            )
+            published.write_text(json.dumps({"published": []}), encoding="utf-8")
+            env = {
+                "IG_ACCESS_TOKEN": "token",
+                "IG_USER_ID": "17841400000000000",
+                "GRAPH_VERSION": "v26.0",
+                "DRY_RUN": "true",
+                "PUBLISH_SLOT": "manual",
+            }
+            with (
+                patch.object(PUBLISHER, "MANIFEST", manifest),
+                patch.object(PUBLISHER, "PUBLISHED", published),
+                patch.dict(os.environ, env, clear=True),
+                patch.object(
+                    PUBLISHER,
+                    "api",
+                    return_value={
+                        "id": "17841400000000000",
+                        "username": "passaproladoofc",
+                    },
+                ) as api_mock,
+            ):
+                self.assertEqual(PUBLISHER.main(), 0)
+
+            api_mock.assert_called_once_with(
+                "GET",
+                "https://graph.facebook.com/v26.0/17841400000000000",
+                "token",
+                params={"fields": "id,username"},
+            )
+            self.assertEqual(
+                json.loads(published.read_text(encoding="utf-8")),
+                {"published": []},
+            )
+
+    def test_dry_run_requires_credentials(self):
+        with patch.dict(os.environ, {"DRY_RUN": "true"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "IG_ACCESS_TOKEN"):
+                PUBLISHER.main()
 
 
 if __name__ == "__main__":

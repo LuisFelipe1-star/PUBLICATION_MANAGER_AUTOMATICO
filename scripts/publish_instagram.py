@@ -74,7 +74,7 @@ def main() -> int:
     version = os.environ.get("GRAPH_VERSION", "").strip() or "v26.0"
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
     slot_key = publication_slot_key(os.environ.get("PUBLISH_SLOT", ""))
-    if not dry_run and (not token or not user_id):
+    if not token or not user_id:
         raise RuntimeError("Configure IG_ACCESS_TOKEN e IG_USER_ID nos Secrets do GitHub.")
 
     manifest = read_json(MANIFEST, [])
@@ -107,11 +107,21 @@ def main() -> int:
         video_url = f"{base_url}/{quote(video_path)}" if base_url else f"(VIDEO_BASE_URL)/{video_path}"
     print(f"Proximo video: {item_id}")
     print(f"URL: {video_url}")
+    base = f"https://graph.facebook.com/{version}"
     if dry_run:
-        print("DRY_RUN=true: nada sera publicado.")
+        account = api(
+            "GET",
+            f"{base}/{user_id}",
+            token,
+            params={"fields": "id,username"},
+        )
+        print(
+            "Credenciais validas para "
+            f"@{account.get('username', 'conta-sem-username')} ({account.get('id')})."
+        )
+        print("DRY_RUN=true: credenciais validadas; nada sera publicado.")
         return 0
 
-    base = f"https://graph.facebook.com/{version}"
     container = api("POST", f"{base}/{user_id}/media", token,
                     data={"media_type": "REELS", "video_url": video_url,
                           "caption": caption, "share_to_feed": "true"})

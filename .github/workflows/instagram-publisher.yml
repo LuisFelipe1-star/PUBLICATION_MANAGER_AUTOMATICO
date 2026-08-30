@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Apenas simular (sem publicar)"
+        description: "Validar credenciais e simular (sem publicar)"
         required: false
         default: true
         type: boolean
@@ -48,7 +48,7 @@ jobs:
       - name: Publicar proximo Reel
         env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN || secrets.ACCESS_TOKEN }}
           GRAPH_VERSION: ${{ secrets.GRAPH_VERSION }}
           VIDEO_BASE_URL: ${{ vars.VIDEO_BASE_URL }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
