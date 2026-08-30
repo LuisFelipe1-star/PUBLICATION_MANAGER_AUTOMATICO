@@ -12,6 +12,15 @@ on:
         required: false
         default: true
         type: boolean
+      slot:
+        description: "Horario que esta execucao representa"
+        required: false
+        default: manual
+        type: choice
+        options:
+          - manual
+          - "1245"
+          - "1930"
 
 permissions:
   contents: write
@@ -43,6 +52,7 @@ jobs:
           GRAPH_VERSION: ${{ secrets.GRAPH_VERSION }}
           VIDEO_BASE_URL: ${{ vars.VIDEO_BASE_URL }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          PUBLISH_SLOT: ${{ github.event_name == 'schedule' && (github.event.schedule == '45 15 * * *' && '1245' || '1930') || inputs.slot }}
         run: python scripts/publish_instagram.py
 
       - name: Persistir estado

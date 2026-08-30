@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from pathlib import Path
 
@@ -14,12 +15,37 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "state" / "manifest.json"
 PUBLISHED = ROOT / "state" / "published.json"
+PUBLICATION_SLOTS = {"1245", "1930"}
+BAHIA_TIME = timezone(timedelta(hours=-3))
 
 
 def read_json(path: Path, default):
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def publication_slot_key(slot: str, now: datetime | None = None) -> str | None:
+    slot = slot.strip()
+    if slot not in PUBLICATION_SLOTS:
+        return None
+    current = now or datetime.now(timezone.utc)
+    local_day = current.astimezone(BAHIA_TIME).date().isoformat()
+    return f"{local_day}:{slot}"
+
+
+def mark_slot_completed(state: dict, slot_key: str) -> None:
+    completed = [str(item) for item in state.get("completed_slots", [])]
+    if slot_key not in completed:
+        completed.append(slot_key)
+    state["completed_slots"] = completed[-120:]
+
+
+def write_state(state: dict) -> None:
+    PUBLISHED.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def api(method: str, url: str, token: str, **kwargs):
@@ -47,6 +73,7 @@ def main() -> int:
     user_id = os.environ.get("IG_USER_ID", "").strip()
     version = os.environ.get("GRAPH_VERSION", "").strip() or "v26.0"
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
+    slot_key = publication_slot_key(os.environ.get("PUBLISH_SLOT", ""))
     if not dry_run and (not token or not user_id):
         raise RuntimeError("Configure IG_ACCESS_TOKEN e IG_USER_ID nos Secrets do GitHub.")
 
@@ -54,10 +81,16 @@ def main() -> int:
     if isinstance(manifest, dict):
         manifest = manifest.get("videos", [])
     state = read_json(PUBLISHED, {"published": []})
+    if slot_key and slot_key in {str(item) for item in state.get("completed_slots", [])}:
+        print(f"Horario {slot_key} ja concluido; nenhuma publicacao sera repetida.")
+        return 0
     done = {str(item) for item in state.get("published", [])}
     pending = [item for item in manifest if str(item.get("id")) not in done]
     if not pending:
         print("Fila concluida: nenhum video pendente.")
+        if slot_key and not dry_run:
+            mark_slot_completed(state, slot_key)
+            write_state(state)
         return 0
 
     item = pending[0]
@@ -100,7 +133,9 @@ def main() -> int:
                     data={"creation_id": creation_id})
     state.setdefault("published", []).append(item_id)
     state["published"] = list(dict.fromkeys(state["published"]))
-    PUBLISHED.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if slot_key:
+        mark_slot_completed(state, slot_key)
+    write_state(state)
     print(f"Publicado {item_id}: {published.get('id')}")
     return 0
 
