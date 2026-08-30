@@ -45,7 +45,7 @@ def instagram_caption(raw: str) -> str:
 def main() -> int:
     token = os.environ.get("IG_ACCESS_TOKEN", "").strip()
     user_id = os.environ.get("IG_USER_ID", "").strip()
-    version = os.environ.get("GRAPH_VERSION", "v26.0").strip()
+    version = os.environ.get("GRAPH_VERSION", "").strip() or "v26.0"
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
     if not dry_run and (not token or not user_id):
         raise RuntimeError("Configure IG_ACCESS_TOKEN e IG_USER_ID nos Secrets do GitHub.")
