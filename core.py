@@ -23,7 +23,7 @@ def _choose_state_base():
   except OSError:continue
  return BASE
 STATE_BASE=_choose_state_base()
-DEFAULT={"auto_video_cutter":{"project_dir":"","input_dir":"","output_dir":"","linked":True},"output_dir":"","timezone":"America/Sao_Paulo","publication_times":["12:45","19:30"],"first_publication":{"mode":"tomorrow","time":"12:45","custom_datetime":""},"missed_policy":"reschedule","stable_seconds":10,"scan_interval_seconds":3,"ffprobe_timeout_seconds":20,"retry_delays_minutes":[5,15,60,180],"test_mode":True,"real_publication_confirmed":False,"auto_monitor":True,"start_with_windows":False,"insights_monitor":True,"insights_interval_minutes":30,"platforms":{"facebook_reels":False,"instagram_reels":False},"captions":{"facebook":{"hashtags":"#reels #facebookreels #viral #carrosel #novelas #novela","follow":"Siga @passaproladoofc para mais"},"instagram":{"hashtags":"#reels #instagramreels #viral #carrosel #novelas #novela","follow":"Siga @passaproladoofc para mais"}},"meta":{"graph_version":"v26.0","facebook_page_id":"","facebook_page_name":"","instagram_user_id":"","instagram_username":"","connected_user_id":"","connected_user_name":"","token_expires_at":0,"available_pages":[],"share_instagram_reel_to_feed":True}}
+DEFAULT={"auto_video_cutter":{"project_dir":"","input_dir":"","output_dir":"","linked":True},"output_dir":"","timezone":"America/Sao_Paulo","publication_times":["12:45","19:30"],"first_publication":{"mode":"tomorrow","time":"12:45","custom_datetime":""},"missed_policy":"reschedule","stable_seconds":10,"scan_interval_seconds":3,"ffprobe_timeout_seconds":20,"retry_delays_minutes":[5,15,60,180],"publisher_backend":"github_actions","test_mode":True,"real_publication_confirmed":False,"auto_monitor":True,"start_with_windows":False,"insights_monitor":True,"insights_interval_minutes":30,"platforms":{"facebook_reels":False,"instagram_reels":False},"captions":{"facebook":{"hashtags":"#reels #facebookreels #viral #carrosel #novelas #novela","follow":"Siga @passaproladoofc para mais"},"instagram":{"hashtags":"#reels #instagramreels #viral #carrosel #novelas #novela","follow":"Siga @passaproladoofc para mais"}},"meta":{"graph_version":"v26.0","facebook_page_id":"","facebook_page_name":"","instagram_user_id":"","instagram_username":"","connected_user_id":"","connected_user_name":"","token_expires_at":0,"available_pages":[],"share_instagram_reel_to_feed":True}}
 def utcnow():return datetime.now(timezone.utc).isoformat()
 def normpath(p):return os.path.normcase(os.path.abspath(str(p)))
 class Config:
@@ -32,14 +32,15 @@ class Config:
   seed=BASE/'config.json'
   source=self.path if self.path.exists() else seed if seed.exists() else None
   if source:self.merge(self.data,json.loads(source.read_text(encoding='utf-8-sig')))
-  # This installation targets Instagram only; never inherit a stale Facebook toggle.
-  self.data['platforms']['facebook_reels']=False
-  self.data['platforms']['instagram_reels']=True
+  if self.data.get('publisher_backend')=='github_actions':
+   self.data['test_mode']=True;self.data['real_publication_confirmed']=False
+   self.data['platforms']['facebook_reels']=False;self.data['platforms']['instagram_reels']=False
   self.validate()
  @staticmethod
  def merge(a,b):
   for k,v in b.items():Config.merge(a[k],v) if isinstance(v,dict) and isinstance(a.get(k),dict) else a.__setitem__(k,v)
  def validate(self):
+  if self.data.get('publisher_backend') not in ('github_actions','desktop'):raise ValueError('Publicador inválido. Use github_actions ou desktop.')
   ZoneInfo(self.data['timezone']);times=[]
   for s in self.data['publication_times']:
    h,m=map(int,s.split(':'))
@@ -189,25 +190,28 @@ class Scanner:
  def make_item(self,mp4,txt,root):
   stat=mp4.stat();mf,meta=self._metadata(mp4,root);idx,part=self._match_part(meta,mp4)
   ch=number(part.get('chapter') or part.get('chapter_number') or mp4.parent.name);pt=number(part.get('part') or part.get('part_number') or mp4.stem);order=int(part.get('order',idx if idx>=0 else ch*10000+pt));video=meta.get('video',{}) if isinstance(meta,dict) else {};title=part.get('title') or part.get('chapter_title') or f'CAPÍTULO {ch:02d} - PARTE {pt:02d}'
-  try:caption=txt.read_text(encoding='utf-8-sig')
-  except UnicodeDecodeError:caption=txt.read_text(encoding='cp1252')
+  if txt and txt.exists():
+   try:caption=txt.read_text(encoding='utf-8-sig')
+   except UnicodeDecodeError:caption=txt.read_text(encoding='cp1252')
+  else:caption=str(part.get('post_text','')).strip()
+  if not caption:raise ValueError(f'{mp4.name} não possui TXT nem post_text no metadata.json')
   h=hashlib.sha256()
   with mp4.open('rb') as f:
    for chunk in iter(lambda:f.read(1024*1024),b''):h.update(chunk)
   digest=h.hexdigest();fingerprint=hashlib.sha256(f'{normpath(mp4)}|{digest}|{stat.st_size}|{stat.st_mtime_ns}'.encode('utf-8')).hexdigest()
-  return {'fingerprint':fingerprint,'hash':digest,'nome':title,'caminho':str(mp4.resolve()),'normalized_path':normpath(mp4),'size':stat.st_size,'mtime_ns':stat.st_mtime_ns,'capitulo':ch,'parte':pt,'ordem':order,'arquivo_mp4':str(mp4.resolve()),'arquivo_txt':str(txt.resolve()),'arquivo_srt':str(mp4.with_suffix('.srt').resolve()) if mp4.with_suffix('.srt').exists() else None,'metadata_json':str(mf.resolve()) if mf else None,'legenda':caption}
+  return {'fingerprint':fingerprint,'hash':digest,'nome':title,'caminho':str(mp4.resolve()),'normalized_path':normpath(mp4),'size':stat.st_size,'mtime_ns':stat.st_mtime_ns,'capitulo':ch,'parte':pt,'ordem':order,'arquivo_mp4':str(mp4.resolve()),'arquivo_txt':str(txt.resolve()) if txt and txt.exists() else '','arquivo_srt':str(mp4.with_suffix('.srt').resolve()) if mp4.with_suffix('.srt').exists() else None,'metadata_json':str(mf.resolve()) if mf else None,'legenda':caption}
  def scan(self):
   root=self.cfg.folder
   if not str(root) or not root.exists():self.log.warning('[SCANNER] Pasta não existe: %s',root);return 0
   added=0
   for mp4 in sorted(root.rglob('*.mp4'),key=lambda p:(number(p.parent.name),number(p.stem),str(p).casefold())):
    txt=mp4.with_suffix('.txt')
-   if not txt.exists():continue
-   mp4_ok=self.stable(mp4);txt_ok=self.stable(txt)
+   mp4_ok=self.stable(mp4);txt_ok=self.stable(txt) if txt.exists() else True
    if not (mp4_ok and txt_ok):continue
    if not self.probe(mp4):self.log.warning('[VALIDAÇÃO] FFprobe rejeitou %s',mp4);continue
-   x=self.make_item(mp4,txt,root)
-   if self.db.add(x):added+=1;self.log.info('[SCANNER] Novo vídeo detectado: %s',mp4.relative_to(root));self.log.info('[VALIDAÇÃO] MP4 estável; TXT encontrado');self.log.info('[FILA] Adicionado: %s',x['nome'])
+   try:x=self.make_item(mp4,txt if txt.exists() else None,root)
+   except ValueError as exc:self.log.warning('[VALIDAÇÃO] %s',exc);continue
+   if self.db.add(x):added+=1;self.log.info('[SCANNER] Novo vídeo detectado: %s',mp4.relative_to(root));self.log.info('[VALIDAÇÃO] MP4 estável; legenda obtida do TXT/metadata');self.log.info('[FILA] Adicionado: %s',x['nome'])
   if added:self.on_added(added);self.changed()
   return added
  def loop(self):

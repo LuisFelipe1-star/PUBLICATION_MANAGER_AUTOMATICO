@@ -1,28 +1,15 @@
-# Backup com cron-job.org
+# Agendamento externo
 
-Os jobs externos devem rodar depois dos horarios principais:
+O workflow não possui `schedule` nativo. Estes são os únicos disparos automáticos autorizados:
 
-- `13:15` para conferir a publicacao das `12:45` (`slot=1245`)
-- `20:00` para conferir a publicacao das `19:30` (`slot=1930`)
+- `13:15` em `America/Sao_Paulo`, representando o slot editorial `12:45`;
+- `20:00` em `America/Sao_Paulo`, representando o slot editorial `19:30`.
 
-Use o timezone `America/Sao_Paulo`. Cada job dispara o workflow
-`instagram-publisher.yml` com `dry_run=false` e seu respectivo `slot`.
-
-O arquivo `state/published.json` registra tambem `data+slot`. Se o
-agendamento normal do GitHub ja tiver concluido aquela publicacao, a
-execucao de backup termina sem publicar outro Reel. A concorrencia do
-workflow serializa uma execucao atrasada e o backup para que ambos leiam
-o estado mais recente.
-
-## Requisicao dos dois jobs
-
-URL:
+Cada job chama:
 
 ```text
-https://api.github.com/repos/LuisFelipe1-star/PUBLICATION_MANAGER_AUTOMATICO/actions/workflows/instagram-publisher.yml/dispatches
+POST https://api.github.com/repos/LuisFelipe1-star/PUBLICATION_MANAGER_AUTOMATICO/actions/workflows/instagram-publisher.yml/dispatches
 ```
-
-Metodo: `POST`
 
 Headers:
 
@@ -33,23 +20,24 @@ Content-Type: application/json
 X-GitHub-Api-Version: 2022-11-28
 ```
 
-O token deve ter acesso somente a este repositorio e permissao
-`Actions: Read and write`. Nunca registre o token neste arquivo.
+O token deve ficar somente no serviço de agendamento, limitado a este repositório e com `Actions: Read and write`.
 
-Corpo do job das 13:15:
+Corpo das 13:15:
 
 ```json
 {"ref":"master","inputs":{"dry_run":"false","slot":"1245"}}
 ```
 
-Corpo do job das 20:00:
+Corpo das 20:00:
 
 ```json
 {"ref":"master","inputs":{"dry_run":"false","slot":"1930"}}
 ```
 
-Para um teste sem publicar, use temporariamente:
+Teste sem publicação:
 
 ```json
 {"ref":"master","inputs":{"dry_run":"true","slot":"manual"}}
 ```
+
+O arquivo `state/published.json` guarda o slot concluído e uma possível reserva `inflight`. Uma reserva pendente bloqueia novas publicações automáticas até revisão manual.

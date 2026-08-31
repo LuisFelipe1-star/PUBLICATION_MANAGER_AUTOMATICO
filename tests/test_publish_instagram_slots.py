@@ -64,6 +64,79 @@ Hashtags:
         self.assertEqual(len(state["completed_slots"]), 120)
         self.assertEqual(state["completed_slots"][-1], "new-slot")
 
+    def test_reservation_is_persisted_before_publication(self):
+        manifest = [{"id": "video-1"}, {"id": "video-2"}]
+        state = {"published": []}
+        item = PUBLISHER.reserve_next(
+            manifest,
+            state,
+            "2026-08-31:1245",
+            datetime(2026, 8, 31, 15, 45, tzinfo=timezone.utc),
+        )
+        self.assertEqual(item["id"], "video-1")
+        self.assertEqual(state["published"], [])
+        self.assertEqual(state["inflight"]["item_id"], "video-1")
+        self.assertEqual(state["inflight"]["status"], "reserved")
+
+    def test_existing_reservation_blocks_automatic_retry(self):
+        state = {
+            "published": [],
+            "inflight": {"item_id": "video-1", "status": "reserved"},
+        }
+        with self.assertRaisesRegex(RuntimeError, "revisao"):
+            PUBLISHER.reserve_next([{"id": "video-1"}], state, None)
+
+    def test_publish_result_requires_separate_finalization(self):
+        state = {
+            "published": [],
+            "inflight": {
+                "item_id": "video-1",
+                "slot_key": "2026-08-31:1245",
+                "status": "reserved",
+            },
+        }
+        PUBLISHER.record_publish_result(
+            state,
+            "instagram-123",
+            datetime(2026, 8, 31, 15, 46, tzinfo=timezone.utc),
+        )
+        self.assertEqual(state["published"], [])
+        self.assertEqual(state["inflight"]["status"], "published")
+        self.assertEqual(state["inflight"]["instagram_media_id"], "instagram-123")
+
+        self.assertEqual(PUBLISHER.finalize_reservation(state), "video-1")
+        self.assertEqual(state["published"], ["video-1"])
+        self.assertEqual(state["completed_slots"], ["2026-08-31:1245"])
+        self.assertNotIn("inflight", state)
+
+    def test_reserved_item_rejects_another_slot(self):
+        state = {
+            "inflight": {
+                "item_id": "video-1",
+                "slot_key": "2026-08-31:1245",
+                "status": "reserved",
+            }
+        }
+        with self.assertRaisesRegex(RuntimeError, "outro horario"):
+            PUBLISHER.reserved_item(
+                [{"id": "video-1"}], state, "2026-08-31:1930"
+            )
+
+    def test_unconfirmed_reservation_cannot_be_finalized(self):
+        state = {"inflight": {"item_id": "video-1", "status": "reserved"}}
+        with self.assertRaisesRegex(RuntimeError, "revisao"):
+            PUBLISHER.finalize_reservation(state)
+
+    def test_empty_queue_reservation_marks_slot_without_inflight(self):
+        state = {"published": ["video-1"]}
+        self.assertIsNone(
+            PUBLISHER.reserve_next(
+                [{"id": "video-1"}], state, "2026-08-31:1930"
+            )
+        )
+        self.assertEqual(state["completed_slots"], ["2026-08-31:1930"])
+        self.assertNotIn("inflight", state)
+
     def test_dry_run_validates_credentials_without_publishing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

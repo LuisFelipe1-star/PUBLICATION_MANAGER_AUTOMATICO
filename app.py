@@ -13,9 +13,9 @@ class Publisher:
   extras=self.cfg.data.get('captions',{}).get(platform,{})
   defaults='#reels #facebookreels #viral #carrosel #novelas #novela' if platform=='facebook' else '#reels #instagramreels #viral #carrosel #novelas #novela'
   configured=extras.get('hashtags') or defaults
-  present={tag.casefold() for tag in re.findall(r'#[\\wÀ-ÿ]+',base,re.UNICODE)}
+  present={tag.casefold() for tag in re.findall(r'#[\wÀ-ÿ]+',base,re.UNICODE)}
   selected=[]
-  for tag in re.findall(r'#[\\wÀ-ÿ]+',configured,re.UNICODE):
+  for tag in re.findall(r'#[\wÀ-ÿ]+',configured,re.UNICODE):
    key=tag.casefold()
    if key not in present and key not in {x.casefold() for x in selected}:selected.append(tag)
   hashtags=' '.join(selected)
@@ -23,6 +23,7 @@ class Publisher:
   if '@passaproladoofc' in base.casefold():follow=''
   return '\n\n'.join(x for x in (base,hashtags,follow) if x)
  def publish(self,r):
+  if self.cfg.data.get('publisher_backend')!='desktop':return
   if not self.db.claim(r['id']):return
   self.log.info('[PUBLISHER] Iniciando publicação: %s',r['nome'])
   try:
@@ -46,6 +47,7 @@ class Publisher:
   finally:self.changed()
  def prepare_remote(self,r):
   """Upload and schedule Facebook content before the local due time."""
+  if self.cfg.data.get('publisher_backend')!='desktop': return
   if self.cfg.data['test_mode'] or not self.cfg.data.get('real_publication_confirmed'): return
   if not self.cfg.data['platforms'].get('facebook_reels') or not r.get('data_agendada'): return
   try:
@@ -103,6 +105,8 @@ class App:
  def manual_scan(self):threading.Thread(target=lambda:(self.scan.scan(),self.queue.fill()),daemon=True).start()
  def toggle(self):
   new=self.testvar.get()
+  if not new and self.cfg.data.get('publisher_backend')!='desktop':
+   messagebox.showinfo('Publicador oficial','A publicação real está atribuída ao GitHub Actions. Altere publisher_backend para desktop somente após desativar os disparos externos.');self.testvar.set(True);return
   if not new and not messagebox.askyesno('Ativar publicação real','Você está prestes a ativar publicação real no Facebook/Instagram. Continuar?'):
    self.testvar.set(True);return
   self.cfg.data['test_mode']=new;self.cfg.data['real_publication_confirmed']=not new;self.cfg.save();self.refresh()
@@ -110,7 +114,7 @@ class App:
  def meta_label(self):
   m=self.cfg.data['meta'];page=m.get('facebook_page_name');ig=m.get('instagram_username');return f"🟢 Meta: {page}"+(f" / @{ig}" if ig else '') if page else '⚪ Meta não conectada'
  def refresh(self):
-  self.state.config(text='🟢 MONITORAMENTO ATIVO' if self.active else '⚪ PARADO');self.mode.config(text='🟡 MODO TESTE ATIVO: nenhuma publicação real' if self.cfg.data['test_mode'] else '🔴 PUBLICAÇÃO REAL ATIVA');folder=self.cfg.folder;self.folder_label.config(text=f'Pasta monitorada: {folder if str(folder) else "não configurada"}');self.cutter_state.config(text='🟢 AUTO VIDEO CUTTER CONECTADO' if folder.exists() else '🔴 AUTO VIDEO CUTTER DESCONECTADO');self.meta_state.config(text=self.meta_label());p=self.cfg.data['platforms'];self.platform_state.config(text=f"Facebook: {'🟢' if p['facebook_reels'] else '⚪'}  Instagram: {'🟢' if p['instagram_reels'] else '⚪'}")
+  self.state.config(text='🟢 MONITORAMENTO ATIVO' if self.active else '⚪ PARADO');backend=self.cfg.data.get('publisher_backend','github_actions');self.mode.config(text='🟦 PUBLICADOR OFICIAL: GITHUB ACTIONS' if backend=='github_actions' else ('🟡 MODO TESTE ATIVO: nenhuma publicação real' if self.cfg.data['test_mode'] else '🔴 PUBLICAÇÃO REAL ATIVA'));folder=self.cfg.folder;self.folder_label.config(text=f'Pasta monitorada: {folder if str(folder) else "não configurada"}');self.cutter_state.config(text='🟢 AUTO VIDEO CUTTER CONECTADO' if folder.exists() else '🔴 AUTO VIDEO CUTTER DESCONECTADO');self.meta_state.config(text=self.meta_label());p=self.cfg.data['platforms'];self.platform_state.config(text=f"Facebook: {'🟢' if p['facebook_reels'] else '⚪'}  Instagram: {'🟢' if p['instagram_reels'] else '⚪'}")
   for k,v in self.db.stats().items():self.metrics[k].config(text=str(v))
   self.table.delete(*self.table.get_children());future=[];plat=('FB + IG' if all(p.values()) else 'FB' if p['facebook_reels'] else 'IG' if p['instagram_reels'] else 'Nenhuma')
   for i,r in enumerate(self.db.all(),1):

@@ -7,8 +7,8 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 
@@ -46,6 +46,83 @@ def write_state(state: dict) -> None:
         json.dumps(state, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def pending_items(manifest: list[dict], state: dict) -> list[dict]:
+    done = {str(item) for item in state.get("published", [])}
+    return [item for item in manifest if str(item.get("id")) not in done]
+
+
+def reserve_next(
+    manifest: list[dict],
+    state: dict,
+    slot_key: str | None,
+    now: datetime | None = None,
+) -> dict | None:
+    inflight = state.get("inflight")
+    if inflight:
+        raise RuntimeError(
+            "Existe uma publicacao em revisao: "
+            f"{inflight.get('item_id')} ({inflight.get('status', 'reserved')}). "
+            "Confirme o resultado no Instagram antes de alterar o estado."
+        )
+
+    pending = pending_items(manifest, state)
+    if not pending:
+        if slot_key:
+            mark_slot_completed(state, slot_key)
+        return None
+
+    item = pending[0]
+    state["inflight"] = {
+        "item_id": str(item["id"]),
+        "slot_key": slot_key,
+        "status": "reserved",
+        "reserved_at": (now or datetime.now(timezone.utc)).isoformat(),
+    }
+    return item
+
+
+def reserved_item(manifest: list[dict], state: dict, slot_key: str | None) -> dict:
+    inflight = state.get("inflight")
+    if not inflight:
+        raise RuntimeError("Nenhuma publicacao foi reservada.")
+    if inflight.get("slot_key") != slot_key:
+        raise RuntimeError(
+            "A reserva pertence a outro horario: "
+            f"{inflight.get('slot_key') or 'manual'}."
+        )
+    item_id = str(inflight.get("item_id", ""))
+    item = next((entry for entry in manifest if str(entry.get("id")) == item_id), None)
+    if item is None:
+        raise RuntimeError(f"O item reservado {item_id} nao existe no manifest.")
+    return item
+
+
+def record_publish_result(state: dict, media_id: str, now: datetime | None = None) -> None:
+    inflight = state.get("inflight")
+    if not inflight:
+        raise RuntimeError("Nenhuma publicacao foi reservada.")
+    inflight["status"] = "published"
+    inflight["instagram_media_id"] = str(media_id)
+    inflight["published_at"] = (now or datetime.now(timezone.utc)).isoformat()
+
+
+def finalize_reservation(state: dict) -> str:
+    inflight = state.get("inflight")
+    if not inflight:
+        raise RuntimeError("Nenhuma publicacao foi reservada.")
+    if inflight.get("status") != "published":
+        raise RuntimeError(
+            "A publicacao reservada ainda exige revisao no Instagram antes de finalizar."
+        )
+    item_id = str(inflight["item_id"])
+    state.setdefault("published", []).append(item_id)
+    state["published"] = list(dict.fromkeys(str(item) for item in state["published"]))
+    if inflight.get("slot_key"):
+        mark_slot_completed(state, str(inflight["slot_key"]))
+    state.pop("inflight", None)
+    return item_id
 
 
 def api(method: str, url: str, token: str, **kwargs):
@@ -108,43 +185,20 @@ def main() -> int:
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
     publishing_enabled = os.environ.get("PUBLISHING_ENABLED", "").lower() == "true"
     slot_key = publication_slot_key(os.environ.get("PUBLISH_SLOT", ""))
+    phase = os.environ.get("PUBLISH_PHASE", "reserve").strip().lower()
+    if phase not in {"reserve", "publish", "finalize"}:
+        raise RuntimeError(f"PUBLISH_PHASE invalida: {phase}")
     if not dry_run and not publishing_enabled:
         raise RuntimeError(
             "Publicacao pausada. Defina PUBLISHING_ENABLED=true nas Variables do GitHub."
         )
-    if not token or not user_id:
+    if phase != "finalize" and (not token or not user_id):
         raise RuntimeError("Configure IG_ACCESS_TOKEN e IG_USER_ID nos Secrets do GitHub.")
 
     manifest = read_json(MANIFEST, [])
     if isinstance(manifest, dict):
         manifest = manifest.get("videos", [])
     state = read_json(PUBLISHED, {"published": []})
-    if slot_key and slot_key in {str(item) for item in state.get("completed_slots", [])}:
-        print(f"Horario {slot_key} ja concluido; nenhuma publicacao sera repetida.")
-        return 0
-    done = {str(item) for item in state.get("published", [])}
-    pending = [item for item in manifest if str(item.get("id")) not in done]
-    if not pending:
-        print("Fila concluida: nenhum video pendente.")
-        if slot_key and not dry_run:
-            mark_slot_completed(state, slot_key)
-            write_state(state)
-        return 0
-
-    item = pending[0]
-    item_id = str(item["id"])
-    caption = instagram_caption(str(item.get("caption", "")).strip())
-    video_url = str(item.get("video_url", "")).strip()
-    if not video_url:
-        base_url = os.environ.get("VIDEO_BASE_URL", "").strip().rstrip("/")
-        video_path = str(item.get("video_path", "")).strip()
-        if not video_path:
-            raise RuntimeError("O item da fila nao possui video_path.")
-        if not base_url and not dry_run:
-            raise RuntimeError("Configure VIDEO_BASE_URL e video_path no manifest.")
-        video_url = f"{base_url}/{quote(video_path)}" if base_url else f"(VIDEO_BASE_URL)/{video_path}"
-    print(f"Proximo video: {item_id}")
-    print(f"URL: {video_url}")
     base = f"https://graph.facebook.com/{version}"
     if dry_run:
         account = api(
@@ -159,6 +213,55 @@ def main() -> int:
         )
         print("DRY_RUN=true: credenciais validadas; nada sera publicado.")
         return 0
+
+    if phase == "reserve":
+        if slot_key and slot_key in {
+            str(item) for item in state.get("completed_slots", [])
+        }:
+            print(f"Horario {slot_key} ja concluido; nenhuma publicacao sera repetida.")
+            return 0
+        item = reserve_next(manifest, state, slot_key)
+        write_state(state)
+        if item is None:
+            print("Fila concluida: nenhum video pendente.")
+        else:
+            print(f"Reservado para revisao segura: {item['id']}")
+        return 0
+
+    if not state.get("inflight") and (
+        not pending_items(manifest, state)
+        or (
+            slot_key
+            and slot_key in {str(item) for item in state.get("completed_slots", [])}
+        )
+    ):
+        print("Nenhuma publicacao reservada; fila ou horario ja concluido.")
+        return 0
+    item = reserved_item(manifest, state, slot_key)
+    item_id = str(item["id"])
+    inflight = state["inflight"]
+    if phase == "finalize":
+        finalized = finalize_reservation(state)
+        write_state(state)
+        print(f"Estado finalizado para {finalized}.")
+        return 0
+
+    if inflight.get("status") == "published":
+        print(f"{item_id} ja foi publicado e aguarda apenas finalizacao.")
+        return 0
+
+    caption = instagram_caption(str(item.get("caption", "")).strip())
+    video_url = str(item.get("video_url", "")).strip()
+    if not video_url:
+        base_url = os.environ.get("VIDEO_BASE_URL", "").strip().rstrip("/")
+        video_path = str(item.get("video_path", "")).strip()
+        if not video_path:
+            raise RuntimeError("O item da fila nao possui video_path.")
+        if not base_url:
+            raise RuntimeError("Configure VIDEO_BASE_URL e video_path no manifest.")
+        video_url = f"{base_url}/{quote(video_path)}"
+    print(f"Publicacao reservada: {item_id}")
+    print(f"URL: {video_url}")
 
     container = api("POST", f"{base}/{user_id}/media", token,
                     data={"media_type": "REELS", "video_url": video_url,
@@ -179,12 +282,9 @@ def main() -> int:
 
     published = api("POST", f"{base}/{user_id}/media_publish", token,
                     data={"creation_id": creation_id})
-    state.setdefault("published", []).append(item_id)
-    state["published"] = list(dict.fromkeys(state["published"]))
-    if slot_key:
-        mark_slot_completed(state, slot_key)
+    record_publish_result(state, str(published["id"]))
     write_state(state)
-    print(f"Publicado {item_id}: {published.get('id')}")
+    print(f"Publicado {item_id}: {published['id']}. Aguardando finalizacao do estado.")
     return 0
 
 

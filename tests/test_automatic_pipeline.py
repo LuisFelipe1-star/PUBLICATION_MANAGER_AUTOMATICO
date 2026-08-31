@@ -23,6 +23,8 @@ class PipelineTests(unittest.TestCase):
  def test_02_read_folders_output(self):self.assertEqual(Path(FolderResolver(self.root).inspect(self.cutter('custom'))['output_dir']),self.cutter()/'custom')
  def test_03_detect_mp4_txt(self):self.clip();self.assertEqual(self.scan_ready(self.scanner()),1)
  def test_04_ignore_without_txt(self):self.clip(txt=False);self.assertEqual(self.scan_ready(self.scanner()),0)
+ def test_metadata_post_text_replaces_optional_txt(self):
+  m=self.clip(4,5,txt=False);meta={'parts':[{'chapter':4,'part':5,'order':12,'title':'Do metadata','video_file':m.name,'post_text':'Legenda do metadata'}]};(m.parents[1]/'metadata.json').write_text(json.dumps(meta),encoding='utf-8');self.assertEqual(self.scan_ready(self.scanner()),1);r=self.db.all()[0];self.assertEqual(r['legenda'],'Legenda do metadata');self.assertEqual(r['arquivo_txt'],'')
  def test_05_ignore_file_being_written(self):
   self.cfg.data['stable_seconds']=999;self.clip();s=self.scanner();self.assertEqual(s.scan(),0);self.assertEqual(s.scan(),0)
  def test_06_recursive_subfolders(self):self.clip(4,7);self.assertEqual(self.scan_ready(self.scanner()),1)
@@ -40,6 +42,11 @@ class PipelineTests(unittest.TestCase):
  def test_16_restart_keeps_schedule(self):self.test_15_schedule_persists_sqlite()
  def test_17_interrupted_publish_goes_review(self):self.add_n(1);r=self.db.all()[0];self.db.schedule([(r['id'],datetime.now(timezone.utc).isoformat())]);self.db.claim(r['id']);self.db.recover();self.assertEqual(self.db.all()[0]['status'],'REVISAO')
  def test_18_test_mode_default(self):self.assertTrue(self.cfg.data['test_mode'])
+ def test_github_actions_is_the_only_default_publisher(self):
+  self.assertEqual(self.cfg.data['publisher_backend'],'github_actions');self.assertFalse(any(self.cfg.data['platforms'].values()));self.assertFalse(self.cfg.data['real_publication_confirmed'])
+ def test_invalid_publisher_backend_is_rejected(self):
+  self.cfg.data['publisher_backend']='both'
+  with self.assertRaisesRegex(ValueError,'Publicador inválido'):self.cfg.validate()
  def test_19_meta_connected_state(self):self.cfg.data['meta']['facebook_page_id']='1';self.assertEqual(self.cfg.data['meta']['facebook_page_id'],'1')
  def test_20_missing_folder(self):self.cfg.data['output_dir']=str(self.root/'missing');self.assertEqual(self.scanner().scan(),0)
  def test_21_changed_folder(self):self.cfg.data['output_dir']=str(self.root/'new');Path(self.cfg.data['output_dir']).mkdir();self.assertEqual(self.cfg.folder,Path(self.cfg.data['output_dir']))

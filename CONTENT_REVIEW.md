@@ -1,0 +1,42 @@
+# Revisão de legendas
+
+Gerado por `scripts/validate_manifest.py`.
+
+- `parte_17`: estrutura válida - Covarde ou Corajoso? | Carrossel Cap. 1
+- `parte_18`: estrutura válida - Cirilo encontra um anjo e Paulo rouba boneca - Carrossel
+- `parte_19`: estrutura válida - Brothers & Friends - Carrossel
+- `parte_20`: estrutura válida - Cirilo mostra quem manda no Carrossel
+- `parte_21`: estrutura válida - Substituição na Escola - Carrossel
+- `parte_22`: estrutura válida - Laura Desabafa sobre a Escola
+- `parte_23`: estrutura válida - A aluna nova conhece Cirilo - Carrossel
+- `parte_24`: estrutura válida - Cirilo e a Aula de Ciências
+- `parte_25`: estrutura válida - Corte do Carrossel - Capítulo 1: A Bolota
+- `parte_26`: estrutura válida - Professora Helena chega no Carrossel
+- `parte_27`: estrutura válida - Classe Inusitada
+- `parte_28`: estrutura válida - Presente! A chamada começa no Carrossel
+- `parte_29`: estrutura válida - A turma desenha as férias
+- `parte_30`: estrutura válida - Carrossel - O Filho Desolante
+- `parte_31`: estrutura válida - Novata na Escola - Carrossel
+- `parte_32`: estrutura válida - Matilde se Acalma
+- `parte_33`: estrutura válida - Chave Bem Escondida!
+- `parte_34`: estrutura válida - Rã ou cobra no Carrossel?
+- `parte_35`: estrutura válida - Cirilo se mete e causa confusão no Carrossel
+- `parte_36`: estrutura válida - Confissão de Cirilo - Carrossel
+- `parte_37`: estrutura válida - Carmen na Diretoria - Carrossel
+- `parte_38`: estrutura válida - Professora Helena enfrenta a confusão no piano
+- `parte_39`: estrutura válida - Kokimoto causa confusão no Carrossel
+- `parte_40`: estrutura válida - Boneca Feia x Ideia Maliciosa
+- `parte_41`: estrutura válida - Marcelina na Luta - Carrossel
+- `parte_42`: estrutura válida - Música e Mistério no Carrossel
+- `parte_43`: estrutura válida - Professora Matilde na Sala!
+- `parte_44`: estrutura válida - Carrossel - Professora Matilde na Aula
+- `parte_45`: estrutura válida - Amor Proibido | Carrossel
+- `parte_46`: estrutura válida - Cirilo pisa no pé de Firmino
+- `parte_47`: estrutura válida - Cirilo tenta explicar a confusão
+- `parte_48`: estrutura válida - Cirilo explica a confusão ao pai
+- `parte_49`: estrutura válida - Maria Joaquina defende Cirilo
+- `parte_50`: estrutura válida - Preconceito e amizade - Carrossel
+- `parte_51`: estrutura válida - Cirilo e a importância da família
+- `parte_52`: estrutura válida - A Primeira Aula - Carrossel
+- `parte_53`: estrutura válida - Ainda há muito pela frente
+- `parte_54`: estrutura válida - Encerramento do capítulo 1
