@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -18,6 +19,33 @@ SPEC.loader.exec_module(PUBLISHER)
 
 
 class PublicationSlotTests(unittest.TestCase):
+    def test_caption_removes_raw_labels_and_duplicate_cta(self):
+        raw = """Título:
+Covarde ou Corajoso? | Carrossel Cap. 1
+
+PARTE 17
+Siga @passaproladoofc para mais
+
+Descrição:
+Ana Paula procura Cirilo, sem sucesso. #Carrossel #AnaPaula
+
+Hashtags:
+#Carrossel #CarrosselCapitulo1 #AnaPaula #FacebookReels"""
+        caption = PUBLISHER.instagram_caption(raw)
+        self.assertNotIn("Título:", caption)
+        self.assertNotIn("Descrição:", caption)
+        self.assertNotIn("Hashtags:", caption)
+        self.assertNotIn("PARTE 17", caption)
+        self.assertNotIn("#FacebookReels", caption)
+        self.assertEqual(caption.count("Siga @passaproladoofc"), 1)
+        self.assertEqual(
+            [tag.casefold() for tag in re.findall(r"#[\wÀ-ÿ]+", caption)].count(
+                "#carrossel"
+            ),
+            1,
+        )
+        self.assertIn("#Reels", caption)
+
     def test_known_slot_uses_bahia_calendar_day(self):
         now = datetime(2026, 8, 31, 1, 0, tzinfo=timezone.utc)
         self.assertEqual(PUBLISHER.publication_slot_key("1930", now), "2026-08-30:1930")
@@ -51,6 +79,7 @@ class PublicationSlotTests(unittest.TestCase):
                 "IG_USER_ID": "17841400000000000",
                 "GRAPH_VERSION": "v26.0",
                 "DRY_RUN": "true",
+                "PUBLISHING_ENABLED": "false",
                 "PUBLISH_SLOT": "manual",
             }
             with (
@@ -82,6 +111,17 @@ class PublicationSlotTests(unittest.TestCase):
     def test_dry_run_requires_credentials(self):
         with patch.dict(os.environ, {"DRY_RUN": "true"}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "IG_ACCESS_TOKEN"):
+                PUBLISHER.main()
+
+    def test_real_run_requires_explicit_enable(self):
+        env = {
+            "IG_ACCESS_TOKEN": "token",
+            "IG_USER_ID": "17841400000000000",
+            "DRY_RUN": "false",
+            "PUBLISHING_ENABLED": "false",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "Publicacao pausada"):
                 PUBLISHER.main()
 
 

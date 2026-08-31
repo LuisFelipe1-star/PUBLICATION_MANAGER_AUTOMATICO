@@ -59,13 +59,46 @@ def api(method: str, url: str, token: str, **kwargs):
 
 
 def instagram_caption(raw: str) -> str:
-    """Keep each cut's text while adding Instagram-only defaults once."""
-    base = re.sub(r"#facebookreels\b", "", raw or "", flags=re.IGNORECASE).strip()
-    present = {tag.casefold() for tag in re.findall(r"#[\wÀ-ÿ]+", base)}
-    defaults = "#reels #instagramreels #viral #carrosel #novelas #novela"
-    extra = [tag for tag in defaults.split() if tag.casefold() not in present]
-    follow = "Siga @passaproladoofc para mais"
-    return "\n\n".join(part for part in (base, " ".join(extra), follow) if part)
+    """Convert the cutter's structured text into a clean Instagram caption."""
+    text = (raw or "").replace("\r\n", "\n").strip()
+    title_match = re.search(
+        r"(?ims)^\s*t[ií]tulo:\s*(.+?)(?=^\s*(?:parte\s+\d+|siga\s+@|descri[cç][aã]o:|hashtags:)|\Z)",
+        text,
+    )
+    description_match = re.search(
+        r"(?ims)^\s*descri[cç][aã]o:\s*(.+?)(?=^\s*hashtags:|\Z)",
+        text,
+    )
+
+    title = title_match.group(1).strip() if title_match else ""
+    description = description_match.group(1).strip() if description_match else ""
+    description = re.sub(r"\s*#[\wÀ-ÿ]+", "", description).strip()
+
+    hashtags = []
+    seen = set()
+    blocked = {"#facebookreels", "#viral", "#novelas", "#novela", "#carrosel"}
+    for tag in re.findall(r"#[\wÀ-ÿ]+", text):
+        key = tag.casefold()
+        if key in blocked or key in seen:
+            continue
+        seen.add(key)
+        hashtags.append(tag)
+    if "#reels" not in seen:
+        hashtags.append("#Reels")
+
+    if not title and not description:
+        clean = re.sub(
+            r"(?im)^\s*(?:t[ií]tulo:|descri[cç][aã]o:|hashtags:|parte\s+\d+|siga\s+@\S+.*)$",
+            "",
+            text,
+        )
+        clean = re.sub(r"#[\wÀ-ÿ]+", "", clean)
+        description = re.sub(r"\n{3,}", "\n\n", clean).strip()
+
+    follow = "Siga @passaproladoofc para acompanhar os próximos cortes."
+    return "\n\n".join(
+        part for part in (title, description, follow, " ".join(hashtags[:10])) if part
+    )
 
 
 def main() -> int:
@@ -73,7 +106,12 @@ def main() -> int:
     user_id = os.environ.get("IG_USER_ID", "").strip()
     version = os.environ.get("GRAPH_VERSION", "").strip() or "v26.0"
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
+    publishing_enabled = os.environ.get("PUBLISHING_ENABLED", "").lower() == "true"
     slot_key = publication_slot_key(os.environ.get("PUBLISH_SLOT", ""))
+    if not dry_run and not publishing_enabled:
+        raise RuntimeError(
+            "Publicacao pausada. Defina PUBLISHING_ENABLED=true nas Variables do GitHub."
+        )
     if not token or not user_id:
         raise RuntimeError("Configure IG_ACCESS_TOKEN e IG_USER_ID nos Secrets do GitHub.")
 
