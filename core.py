@@ -95,6 +95,8 @@ class DB:
    exists=c.execute('SELECT 1 FROM videos WHERE fingerprint=? OR (normalized_path=? AND size=? AND mtime_ns=?)',(x['fingerprint'],x['normalized_path'],x['size'],x['mtime_ns'])).fetchone()
    if exists:return False
    c.execute('''INSERT INTO videos(fingerprint,hash,nome,caminho,normalized_path,size,mtime_ns,capitulo,parte,ordem,arquivo_mp4,arquivo_txt,arquivo_srt,metadata_json,legenda,status,data_detectado,atualizado_em) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDENTE',?,?)''',(x['fingerprint'],x['hash'],x['nome'],x['caminho'],x['normalized_path'],x['size'],x['mtime_ns'],x['capitulo'],x['parte'],x['ordem'],x['arquivo_mp4'],x['arquivo_txt'],x.get('arquivo_srt'),x.get('metadata_json'),x['legenda'],n,n));return True
+ def known(self,normalized_path,size,mtime_ns):
+  with self.con() as c:return c.execute('SELECT 1 FROM videos WHERE normalized_path=? AND size=? AND mtime_ns=?',(normalized_path,size,mtime_ns)).fetchone() is not None
  def all(self):
   with self.con() as c:return [dict(r) for r in c.execute('SELECT * FROM videos ORDER BY CASE WHEN data_agendada IS NULL THEN 1 ELSE 0 END,data_agendada,ordem,capitulo,parte,id')]
  def stats(self):
@@ -208,6 +210,9 @@ class Scanner:
    txt=mp4.with_suffix('.txt')
    mp4_ok=self.stable(mp4);txt_ok=self.stable(txt) if txt.exists() else True
    if not (mp4_ok and txt_ok):continue
+   try:st=mp4.stat()
+   except OSError:continue
+   if self.db.known(normpath(mp4),st.st_size,st.st_mtime_ns):continue
    if not self.probe(mp4):self.log.warning('[VALIDAÇÃO] FFprobe rejeitou %s',mp4);continue
    try:x=self.make_item(mp4,txt if txt.exists() else None,root)
    except ValueError as exc:self.log.warning('[VALIDAÇÃO] %s',exc);continue

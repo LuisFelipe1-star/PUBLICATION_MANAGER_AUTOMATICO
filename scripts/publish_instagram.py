@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,10 +43,22 @@ def mark_slot_completed(state: dict, slot_key: str) -> None:
 
 
 def write_state(state: dict) -> None:
-    PUBLISHED.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    PUBLISHED.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{PUBLISHED.name}.", suffix=".tmp", dir=PUBLISHED.parent
     )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, PUBLISHED)
+    except Exception:
+        try:
+            os.unlink(temporary_name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def pending_items(manifest: list[dict], state: dict) -> list[dict]:

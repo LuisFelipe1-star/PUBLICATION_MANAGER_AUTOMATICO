@@ -64,6 +64,19 @@ Hashtags:
         self.assertEqual(len(state["completed_slots"]), 120)
         self.assertEqual(state["completed_slots"][-1], "new-slot")
 
+    def test_write_state_replaces_file_without_leaving_temp_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            published = Path(temp_dir) / "published.json"
+            published.write_text('{"published": ["old"]}\n', encoding="utf-8")
+            with patch.object(PUBLISHER, "PUBLISHED", published):
+                PUBLISHER.write_state({"published": ["new"]})
+
+            self.assertEqual(
+                json.loads(published.read_text(encoding="utf-8")),
+                {"published": ["new"]},
+            )
+            self.assertEqual(list(published.parent.glob(".published.json.*.tmp")), [])
+
     def test_reservation_is_persisted_before_publication(self):
         manifest = [{"id": "video-1"}, {"id": "video-2"}]
         state = {"published": []}

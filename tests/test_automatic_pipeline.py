@@ -31,14 +31,14 @@ class PipelineTests(unittest.TestCase):
  def test_07_chapter_part_order(self):
   self.clip(2,1);self.clip(1,2);self.clip(1,1);self.scan_ready(self.scanner());self.assertEqual([(r['capitulo'],r['parte']) for r in sorted(self.db.all(),key=lambda r:(r['capitulo'],r['parte']))],[(1,1),(1,2),(2,1)])
  def test_08_no_duplicate(self):self.clip();s=self.scanner();self.scan_ready(s);self.assertEqual(s.scan(),0);self.assertEqual(len(self.db.all()),1)
- def test_09_auto_schedule(self):self.add_n(2);self.assertEqual(Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill(),2)
- def test_10_starts_tomorrow(self):self.add_n(1);Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill();self.assertEqual(datetime.fromisoformat(self.db.all()[0]['data_agendada']).astimezone(self.cfg.tz).strftime('%Y-%m-%d %H:%M'),'2026-08-25 12:45')
- def test_11_distribute_10(self):self.add_n(10);Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill();self.assertEqual(len({r['data_agendada'] for r in self.db.all()}),10)
- def test_12_distribute_100(self):self.add_n(100);self.assertEqual(Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill(),100)
- def test_13_new_video_while_running(self):self.add_n(1);q=Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz));q.fill();self.clip(9,9);self.scan_ready(self.scanner());self.assertEqual(q.fill(),1)
+ def test_09_auto_schedule(self):self.add_n(2);self.assertEqual(Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill(),2)
+ def test_10_starts_tomorrow(self):self.add_n(1);Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill();self.assertEqual(datetime.fromisoformat(self.db.all()[0]['data_agendada']).astimezone(self.cfg.tz).strftime('%Y-%m-%d %H:%M'),'2026-08-25 12:45')
+ def test_11_distribute_10(self):self.add_n(10);Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill();self.assertEqual(len({r['data_agendada'] for r in self.db.all()}),10)
+ def test_12_distribute_100(self):self.add_n(100);self.assertEqual(Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill(),100)
+ def test_13_new_video_while_running(self):self.add_n(1);q=Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz));q.fill();self.clip(9,9);self.scan_ready(self.scanner());self.assertEqual(q.fill(),1)
  def test_14_no_past_slot(self):
-  self.cfg.data['first_publication']['mode']='next';self.add_n(1);Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,20,tzinfo=self.cfg.tz)).fill();x=datetime.fromisoformat(self.db.all()[0]['data_agendada']).astimezone(self.cfg.tz);self.assertGreater(x,datetime(2026,8,24,20,tzinfo=self.cfg.tz))
- def test_15_schedule_persists_sqlite(self):self.add_n(1);Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill();self.assertTrue(DB(self.root/'db.sqlite').all()[0]['data_agendada'])
+  self.cfg.data['first_publication']['mode']='next';self.add_n(1);Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,20,tzinfo=self.cfg.tz)).fill();x=datetime.fromisoformat(self.db.all()[0]['data_agendada']).astimezone(self.cfg.tz);self.assertGreater(x,datetime(2026,8,24,20,tzinfo=self.cfg.tz))
+ def test_15_schedule_persists_sqlite(self):self.add_n(1);Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz)).fill();self.assertTrue(DB(self.root/'db.sqlite').all()[0]['data_agendada'])
  def test_16_restart_keeps_schedule(self):self.test_15_schedule_persists_sqlite()
  def test_17_interrupted_publish_goes_review(self):self.add_n(1);r=self.db.all()[0];self.db.schedule([(r['id'],datetime.now(timezone.utc).isoformat())]);self.db.claim(r['id']);self.db.recover();self.assertEqual(self.db.all()[0]['status'],'REVISAO')
  def test_18_test_mode_default(self):self.assertTrue(self.cfg.data['test_mode'])
@@ -55,6 +55,28 @@ class PipelineTests(unittest.TestCase):
  def test_23_metadata_absent(self):self.clip(2,3);self.scan_ready(self.scanner());r=self.db.all()[0];self.assertEqual((r['capitulo'],r['parte']),(2,3))
  def test_changed_same_path_is_new_version(self):
   m=self.clip();s=self.scanner();self.scan_ready(s);time.sleep(.002);m.write_bytes(b'changed');os.utime(m,None);self.scan_ready(s);self.assertEqual(len(self.db.all()),2)
+ def _contador(self,s):
+  calls={'probe':0,'item':0};base_probe=s.probe;base_item=s.make_item
+  def probe(p):calls['probe']+=1;return base_probe(p)
+  def make_item(mp4,txt,root):calls['item']+=1;return base_item(mp4,txt,root)
+  s.probe=probe;s.make_item=make_item;return calls
+ def test_second_scan_skips_probe_and_hash(self):
+  self.clip(1,1);self.clip(1,2);s=self.scanner();calls=self._contador(s)
+  self.assertEqual(self.scan_ready(s),2);self.assertEqual(len(self.db.all()),2)
+  antes=dict(calls);self.assertEqual(s.scan(),0)
+  self.assertEqual(calls['probe'],antes['probe'],'FFprobe foi chamado de novo para arquivo já registrado')
+  self.assertEqual(calls['item'],antes['item'],'SHA-256 foi recalculado para arquivo já registrado')
+ def test_second_scan_after_restart_skips_probe_and_hash(self):
+  self.clip();self.scan_ready(self.scanner())
+  s=self.scanner();calls=self._contador(s)
+  self.assertEqual(self.scan_ready(s),0)
+  self.assertEqual(calls['probe'],0,'FFprobe foi chamado após reinício para arquivo já registrado')
+  self.assertEqual(calls['item'],0,'SHA-256 foi recalculado após reinício para arquivo já registrado')
+ def test_copy_to_new_path_is_detected(self):
+  m=self.clip();s=self.scanner();self.scan_ready(s)
+  d=self.out/'Video/CAPITULO_02';d.mkdir(parents=True,exist_ok=True)
+  copia=d/'parte_01.mp4';copia.write_bytes(m.read_bytes());copia.with_suffix('.txt').write_text('legenda copia',encoding='utf-8')
+  self.assertEqual(self.scan_ready(s),1);self.assertEqual(len(self.db.all()),2)
  def test_missed_reschedules(self):
-  self.add_n(1);r=self.db.all()[0];self.db.schedule([(r['id'],'2026-08-23T12:45:00+00:00')]);q=Queue(self.cfg,self.db,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz));self.assertEqual(q.recover_missed(),1);self.assertEqual(self.db.all()[0]['status'],'AGENDADO')
+  self.add_n(1);r=self.db.all()[0];self.db.schedule([(r['id'],'2026-08-23T12:45:00+00:00')]);q=Queue(self.cfg,self.db,log=self.log,now_fn=lambda:datetime(2026,8,24,14,tzinfo=self.cfg.tz));self.assertEqual(q.recover_missed(),1);self.assertEqual(self.db.all()[0]['status'],'AGENDADO')
 if __name__=='__main__':unittest.main()
