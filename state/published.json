@@ -15,7 +15,8 @@
     "parte_29",
     "parte_30",
     "parte_31",
-    "parte_32"
+    "parte_32",
+    "parte_33"
   ],
   "completed_slots": [
     "2026-08-30:1930",
@@ -35,13 +36,5 @@
     "2026-09-06:1930",
     "2026-09-07:1245",
     "2026-09-07:1930"
-  ],
-  "inflight": {
-    "item_id": "parte_33",
-    "slot_key": null,
-    "status": "published",
-    "reserved_at": "2026-09-10T18:08:12.166960+00:00",
-    "instagram_media_id": "18060400574537679",
-    "published_at": "2026-09-10T18:10:02.565529+00:00"
-  }
+  ]
 }
