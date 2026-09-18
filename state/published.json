@@ -72,7 +72,9 @@
   "inflight": {
     "item_id": "parte_50",
     "slot_key": "2026-09-18:1930",
-    "status": "reserved",
-    "reserved_at": "2026-09-18T23:00:24.725984+00:00"
+    "status": "published",
+    "reserved_at": "2026-09-18T23:00:24.725984+00:00",
+    "instagram_media_id": "18078414596413366",
+    "published_at": "2026-09-18T23:01:04.875542+00:00"
   }
 }
